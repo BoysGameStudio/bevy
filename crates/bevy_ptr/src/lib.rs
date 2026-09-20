@@ -1121,17 +1121,6 @@ impl<'a, T> ThinSlicePtr<'a, T> {
         // - `len` is valid hence `len * size_of::<T>()` is less than `isize::MAX`.
         unsafe { core::slice::from_raw_parts(self.ptr.as_ptr(), len) }
     }
-
-    /// Indexes the slice without performing bounds checks.
-    ///
-    /// # Safety
-    ///
-    /// `index` must be in-bounds.
-    #[deprecated(since = "0.18.0", note = "use get_unchecked() instead")]
-    pub unsafe fn get(self, index: usize) -> &'a T {
-        // SAFETY: The caller guarantees that `index` is in-bounds.
-        unsafe { self.get_unchecked(index) }
-    }
 }
 
 impl<'a, T> ThinSlicePtr<'a, UnsafeCell<T>> {

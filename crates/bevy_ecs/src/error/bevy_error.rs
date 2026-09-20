@@ -185,26 +185,16 @@ impl BevyError {
                             }
                             skip_next_location_line = false;
                         }
-                        if line.contains("std::backtrace_rs::backtrace::") {
-                            skip_next_location_line = true;
-                            continue;
-                        }
-                        if line.contains("std::backtrace::Backtrace::") {
-                            skip_next_location_line = true;
-                            continue;
-                        }
-                        if line.contains("<bevy_ecs::error::bevy_error::BevyError as core::convert::From<E>>::from") {
-                            skip_next_location_line = true;
-                            continue;
-                        }
-                        if line.contains("<core::result::Result<T,F> as core::ops::try_trait::FromResidual<core::result::Result<core::convert::Infallible,E>>>::from_residual") {
+                        if internal_backtrace_frame(line) {
                             skip_next_location_line = true;
                             continue;
                         }
                         if line.contains("__rust_begin_short_backtrace") {
                             break;
                         }
-                        if line.contains("bevy_ecs::observer::Observers::invoke::{{closure}}") {
+                        if line.contains("bevy_ecs::observer::Observers::invoke::")
+                            && line.contains("closure")
+                        {
                             break;
                         }
                     }
@@ -431,6 +421,17 @@ impl Debug for BevyError {
 }
 
 #[cfg(feature = "backtrace")]
+fn internal_backtrace_frame(line: &str) -> bool {
+    line.contains("std::backtrace_rs::backtrace::")
+        || line.contains("std::backtrace::Backtrace::")
+        || line.contains("<std::backtrace::Backtrace>::")
+        || (line.contains("<bevy_ecs::error::bevy_error::BevyError as core::convert::From<")
+            && line.trim_end().ends_with(">>::from"))
+        || (line.contains("core::ops::try_trait::FromResidual<")
+            && line.trim_end().ends_with(">::from_residual"))
+}
+
+#[cfg(feature = "backtrace")]
 const FILTER_MESSAGE: &str = "note: Some \"noisy\" backtrace lines have been filtered out. Run with `BEVY_BACKTRACE=full` for a verbose backtrace.";
 
 #[cfg(feature = "backtrace")]
@@ -480,71 +481,22 @@ mod tests {
 
         let error = i_fail().err().unwrap();
         let debug_message = alloc::format!("{error:?}");
-        let mut lines = debug_message.lines().peekable();
-        assert_eq!(
-            "ParseIntError { kind: InvalidDigit }",
-            lines.next().unwrap()
-        );
+        let lines = debug_message.lines().collect::<alloc::vec::Vec<_>>();
+        assert_eq!(lines[0], "ParseIntError { kind: InvalidDigit }");
+        assert_eq!(lines.last().copied(), Some(super::FILTER_MESSAGE));
+        let symbols = lines.iter().filter_map(|line| {
+            let (index, symbol) = line.trim_start().split_once(": ")?;
+            index.parse::<usize>().ok().map(|_| symbol)
+        }).collect::<alloc::vec::Vec<_>>();
+        let caller = concat!(module_path!(), "::filtered_backtrace_test");
+        assert_eq!(symbols[0], alloc::format!("{caller}::i_fail"));
+        assert_eq!(symbols[1], caller);
+        assert!(symbols[2].starts_with(caller) && symbols[2].contains("closure"));
+        assert!(symbols.iter().skip(3).any(|line| line.contains("core::ops::function::FnOnce")));
+        assert!(symbols.iter().all(|line| !super::internal_backtrace_frame(line)));
+        assert!(!symbols.iter().any(|line| line.contains("__rust_begin_short_backtrace")
+            || line.contains("test::run_test") || line.contains("std::panicking::catch_unwind")));
 
-        // On mac backtraces can start with Backtrace::create
-        // Rust 1.95 changed the format to use angle brackets: <std::backtrace::Backtrace>::create
-        let mut skip = false;
-        if let Some(line) = lines.peek()
-            && (line[6..] == *"std::backtrace::Backtrace::create"
-                || line[6..] == *"<std::backtrace::Backtrace>::create")
-        {
-            skip = true;
-        }
-
-        if skip {
-            lines.next().unwrap();
-        }
-
-        let expected_lines = alloc::vec![
-            "bevy_ecs::error::bevy_error::tests::filtered_backtrace_test::i_fail",
-            "bevy_ecs::error::bevy_error::tests::filtered_backtrace_test",
-            "bevy_ecs::error::bevy_error::tests::filtered_backtrace_test::{{closure}}",
-            "core::ops::function::FnOnce::call_once",
-        ];
-
-        for expected in expected_lines {
-            let line = lines.next().unwrap();
-            assert_eq!(&line[6..], expected);
-            let mut skip = false;
-            if let Some(line) = lines.peek()
-                && line.starts_with("             at")
-            {
-                skip = true;
-            }
-
-            if skip {
-                lines.next().unwrap();
-            }
-        }
-
-        // on linux there is a second call_once
-        let mut skip = false;
-        if let Some(line) = lines.peek()
-            && &line[6..] == "core::ops::function::FnOnce::call_once"
-        {
-            skip = true;
-        }
-
-        if skip {
-            lines.next().unwrap();
-        }
-        let mut skip = false;
-        if let Some(line) = lines.peek()
-            && line.starts_with("             at")
-        {
-            skip = true;
-        }
-
-        if skip {
-            lines.next().unwrap();
-        }
-        assert_eq!(super::FILTER_MESSAGE, lines.next().unwrap());
-        assert!(lines.next().is_none());
     }
 
     #[test]

@@ -120,10 +120,6 @@ impl Default for FallbackErrorHandler {
     }
 }
 
-/// Deprecated alias for [`FallbackErrorHandler`].
-#[deprecated(since = "0.19.0", note = "Renamed to `FallbackErrorHandler`.")]
-pub type DefaultErrorHandler = FallbackErrorHandler;
-
 /// Error handler that defers to an error's [`Severity`].
 #[track_caller]
 #[inline]

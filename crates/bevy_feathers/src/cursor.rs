@@ -27,7 +27,7 @@ pub struct DefaultCursor(pub EntityCursor);
 /// A component that specifies the cursor shape to be used when the pointer hovers over an entity.
 /// This is copied to the windows's [`CursorIcon`] component.
 ///
-/// This is effectively the same type as [`CustomCursor`] but with different methods, and used
+/// This is effectively the same type as [`CursorIcon`] but with different methods, and used
 /// in different places.
 #[derive(Component, Debug, Clone, Reflect, PartialEq, Eq, FromTemplate)]
 #[reflect(Component, Debug, Default, PartialEq, Clone)]
